@@ -1,64 +1,73 @@
 #!/bin/python3
 
 import struct
-
+import numpy as np
+from matplotlib import pyplot as plt
 file = "conc.dat"
 
 # Open the binary file
 with open(file, "rb") as f:
 
-    # RECORD #1 --  DATASET(16),DATAVER(16),DATAMOD(64)
-    f.read(4) #record marker (record size in bytes)
-    FIRST_REC = f.read(96).decode("utf-8").strip()
-    print(f"{FIRST_REC}")
-    f.read(4) #end of record
+    # RECORD #1 --  
+    #write(io8) conset,dataver,datamod
+    f.read(4) # record marker (record size in bytes)
+    f.read(96)#FIRST_REC = f.read(96).decode("utf-8").strip()
+    f.read(4) #end of line (EOL) record
 
-    # RECORD #2 --  NCOM
+    # RECORD #2 --  NCOM     
+    #write(io8) ncom
     f.read(4) #record marker
     NCOM = struct.unpack("i", f.read(4))[0]
-    print(f"NCOM: {NCOM}")
     f.read(4) #end of record
-
     # RECORD #3 to NCOM+2 --  Comments.
     for i in range(NCOM):
         rec_size=f.read(4)[0] #record marker
         f.read(rec_size) #skip commented lines.
-        f.read(4)        #end of record
+        f.read(4)        #EOL
 
     # RECORD #NCOM+3 -- General run parameters
-
-    f.read(4) #rec_size = struct.unpack("i", f.read(4))[0]  
-    #print(rec_size)
-    MODEL = f.read(12).decode("utf-8").strip()
-    VER   = f.read(12).decode("utf-8").strip()
-    LEVEL = f.read(12).decode("utf-8").strip()
-
-    IBYR, IBJUL, IBHR, IBSEC = struct.unpack("4i", f.read(16))
-    ABTZ = f.read(8).decode("utf-8").strip()
+    #write(io8)mmodel,ver,level,ibyr,ibjul,ibhr,ibsec,
+    #1 abtz,irlg,iavg,nsecdt,nx,ny,dxkm,dykm,ione,xorigkm,yorigkm,
+    #2 nssta(1),ibcomp,iecomp,jbcomp,jecomp,ibsamp,jbsamp,iesamp,
+    #3 jesamp,meshdn,nsrctype,msource,nrec,nrgrp,
+    #4 nctrec,lsamp,nspout,lcomprs,i2dmet,
+    #5 iutmzn,feast,fnorth,rnlat0,relon0,xlat1,xlat2,
+    #6 pmap,utmhem,datum,daten,clat0,clon0,clat1,clat2
+    f.read(4) 
+    MODEL, VER, LEVEL        = struct.unpack("12s 12s 12s", f.read(36))
+    IBYR, IBJUL, IBHR, IBSEC, ABTZ = struct.unpack("4i 8s", f.read(24))
     IRLG, IAVG, NSECDT = struct.unpack("3i", f.read(12))
-    NX,NY = struct.unpack("2i",f.read(8))
-    DXKM,DYKM,IONE,XORIGKM,YORIGKM = struct.unpack("5f", f.read(20))
+    NX,NY, DXKM,DYKM, IONE, XORIGKM,YORIGKM  = struct.unpack("2i 2f i 2f",f.read(28))
 
-    NSSTA = struct.unpack("i", f.read(4))                            # n ssurface stations
+    NSSTA = struct.unpack("i", f.read(4))                            #n ssurface stations
     IBCOMP, IECOMP, JBCOMP, JECOMP = struct.unpack("4i", f.read(16)) #computational grid
     IBSAMP, JBSAMP, IESAMP, JESAMP = struct.unpack("4i", f.read(16)) #sampling grid
     MESHDN = struct.unpack("i", f.read(4))                           #sampling grid spacing factor
 
-    nsrctype, msource, nrec,nrgrp, nctrec = struct.unpack("5i", f.read(20))
-    lsamp= struct.unpack("i", f.read(4))
-    nspout, lcomprs, i2dmet,iutmzn = struct.unpack("4i", f.read(16))
-    feast,fnorth,rnlat0,relon0,xlat1,xlat2 = struct.unpack("6f", f.read(24))
-    proj= f.read(96).decode("utf-8").strip()#pmap,utmhem,datum,daten,clat0,clon0,clat1,clat2
+    nsrctype, msource, nrec, nrgrp, nctrec  = struct.unpack("5i", f.read(20)) #
+    lsamp, nspout, lcomprs, i2dmet          = struct.unpack("4i", f.read(16)) # sample grid?. num of species. data compresed?, rel humidity source data?
+    iutmzn, feast,fnorth,rnlat0,relon0,xlat1,xlat2 = struct.unpack("i 6f", f.read(28))       # proj parameters.
+    proj= f.read(96).decode("utf-8").strip()#pmap,utmhem,datum,daten,clat0,clon0,clat1,clat2 # proj parameters string form.
+
     f.read(4) #close record
 
+    if ( lcomprs ): print("(!) ¡¡ COMPRESED DATA !! (!)")
+
     print(f"Model: {MODEL}, Version: {VER}, Level: {LEVEL}")
-    print(f"  Start Year: {IBYR}, Julian Day: {IBJUL}, Hour: {IBHR} ({ABTZ})")
-    print(f"  Length of run: {IRLG}, Avg. Time: {IAVG}, TimeStep: {NSECDT} sec.")
-    print(f"  Grid size: {NX}x{NY}. Cell size: {DXKM}km x  {DYKM}km. Xmin, Ymin: ({XORIGKM},{YORIGKM})")
+    print(f"   Start Year: {IBYR}, Julian Day: {IBJUL}, Hour: {IBHR} ({ABTZ})")
+    print(f"   Length of run: {IRLG}, Avg. Time: {IAVG}, TimeStep: {NSECDT} sec.")
+    print(f"   Grid size: {NX}x{NY}. Cell size: {DXKM}km x  {DYKM}km. Xmin, Ymin: ({XORIGKM},{YORIGKM})")
+    print( "   Proj:",iutmzn,feast,fnorth,rnlat0,relon0,xlat1,xlat2 )
+    print(f"   {proj}")
+    print(f"   Number of species-groups: {nspout}")
+    nxg = IESAMP - IBSAMP+1
+    nyg = JESAMP - JBSAMP+1 
+    print(f"   Number of gridded         receptors: {nxg} x {nyg}")
+    print(f"   Number of discrete        receptors: {nspout}")
+    print(f"   Number of complex terrain receptors: {nctrec}")
 
-    print("Proj:",iutmzn,feast,fnorth,rnlat0,relon0,xlat1,xlat2 )
-    print(proj)
-
+    # NON-REPORTED RECORD: how many sources from each type
+    #write(io8) (nsrcbytype(n),n=1,nsrctype)
     f.read(4) #close record
     nsrcbytype = struct.unpack(str(nsrctype)+"i", f.read(nsrctype*4)) #[nsrcbytype(n),n=1,nsrctype]
     f.read(4) #close record
@@ -66,78 +75,136 @@ with open(file, "rb") as f:
 
     # RECORD #NCOM+4 -- TITLE
     f.read(4) #record marker (record size in bytes)
-    TITLE = f.read(80).decode("utf-8").strip()
-    print(f"TITLE: {TITLE}")
-    f.read(4) #end of record
+    TITLE = f.read(80*3).decode("utf-8").strip()
+    f.read(4) #EOL
 
     # RECORD #NCOM+5 -- List of species-groups output
+    #write(io8)(csout(n),n=1,nspout)
     #for grp in range(ngrp):
-    f.read(4) #close record
+    f.read(4)
     csout=[""]*nspout
     for i in range(nspout):
        csout[i] = f.read(15).decode("utf-8").strip()
-    f.read(4) #close record
-    print(csout)
+    f.read(4) #EOL
+    print(f"   Species groups: {csout}")
 
     # RECORD #NCOM+5a-- List of species-groups units 
-    f.read(4) #close record
+    #write(io8)(acunit(n),n=1,nspout)
+    f.read(4) 
     acunit=[""]*nspout
     for i in range(nspout):
       acunit[i] = f.read(16).decode("utf-8").strip()
-    f.read(4) #close record
-    print(acunit)
+    f.read(4) #EOL
+    print(f"   Species units:  {acunit}")
 
+
+    # RECORD #NCOM+6 -- Discrete (non-gridded) receptor data
     if (nrec > 0):
-        # RECORD #NCOM+6 -- Discrete (non-gridded) receptor data
+        print(f"   Number of discrete receptors: {nrec}")
         f.read(4) #close record
         for i in range(nrec):
             x[i],y[i],z[i],zng[i],irgrp[i] = struct.unpack("5f", f.read(20))
-        f.read(4) #close record
+        f.read(4) #EOL
         
-        # RECORD #NCOM+6a-- Receptor-group names
+        # RECORD #NCOM+6a -- Receptor-group names
         f.read(4) #close record
         for i in range(nrec):
             rgrpnam[i] = f.read(80).decode("utf-8").strip()
-        f.read(4) #close record
+        f.read(4) #EOL
 
-    print(nctrec)
     # RECORD #NCOM+7 -- Complex terrain receptor data
     if (nctrec > 0):
+        print(f"   Number of complex terrain receptors: {nctrec}")
         f.read(4) #close record
         for i in range(nctrec):
             x[i],y[i],z[i],ihill[i] = struct.unpack("5f", f.read(20))
-        f.read(4) #close record
-
+        f.read(4) #EOL
         print(x,y,z,ihill)
 
-    # RECORD #NCOM+8( -- Source names
-    f.read(4) #close record
+    # RECORD #NCOM+8 -- Source names
+    #do itype=1,nsrctype
+    #if(nsrcbytype(itype).GT.0) then
+    #write(io8) itype,[cnamsrc(n,itype), n=1,nsrcbytype(itype)]
+    #print(f"Number of sorces types: {nsrctype}")
+    cnamsrc=[""]*nsrctype
     for itype in range(nsrctype):
-        if ( nsrcbytype(itype) > 0):
-            cnamsrc[itype] = f.read(16).decode("utf-8").strip()
-    f.read(4) #close record
+        n=nsrcbytype[itype] 
+        if ( n > 0 ):
+            f.read(4) #open record line
+            f.read(4) #itype      
+            for j in range(n):
+                cnamsrc = f.read(16).decode("utf-8").strip()
+                print(cnamsrc)
+            f.read(4) #EOL
+    print(f"   Source names: {cnamsrc})")
 
-    # RECORD #NCOM+9 -- Source names
+    # RECORD #NCOM+8 -- Nearest Surface Station for VISIBILITY ONLY
+    # RECORD #NCOM+9 -- X coord (UTM) of stations for VISIBILITY ONLY
+    # RECORD #NCOM+10 -- Y coord (UTM) of stations for VISIBILITY ONLY
 
-
-
+    #-----------------------------------------------------------------
     ##MAIN DATA:
-    #write(io8)nyrab,njulab,nhrab,nsecab,nyre,njule,nhre,nsece
-    #write(io8)ktype,ksource,csrcnam,xmapkm,ymapkm
-
     for t in range(IRLG): #temporal loop
-        for src in range(nspec):
-            for grp in range(ngrup)
+        #write(io8)nyrab,njulab,nhrab,nsecab,nyre,njule,nhre,nsece
+        f.read(4)[0]
+        yr1,dy1,hr1,sec1, yr2,dy2,hr2,sec2 = struct.unpack("8i", f.read(32))
+        f.read(4) #EOL
 
-                for i in range(
-    yr1,dy1,hr1,sec1 = struct.unpack("4i", f.read(16))
-    yr2,dy2,hr2,sec2 = struct.unpack("4i", f.read(16))
-    f.read(4)
+        print(f"Record date: {yr1} - {dy1} - {hr1} hour.")
+        print(f"Record date: {yr2} - {dy2} - {hr2} hour.")
 
-    istype,isnum     = struct.unpack("2i", f.read(8))
-    sname            = f.read(16).decode("utf-8").split()
-    sxkm,sykm        = struct.unpack("2i", f.read(8))
-    f.read(4)
+        #write(io8)ktype,ksource,csrcnam,xmapkm,ymapkm
+        f.read(4)[0]
+        ktype,ksource,csrcnam,xmapkm,ymapkm = struct.unpack("2i 16s 2f", f.read(32))
+        f.read(4)
+        print(f"2nd line: {ktype},{ksource},{csrcnam},{xmapkm},{ymapkm})")       
+
+        for sp in range(nspout):
+
+            # ---    Gridded receptor concentrations
+            if ( lsamp ):
+                if ( lcomprs ):
+                    rec_size = f.read(4)[0]
+                    ii = struct.unpack("i", f.read(4))      #header of compressed file, indicating record length.
+                    f.read(4)
+                    print(f" (( REC_SIZE {rec_size} )). II = {ii}")
+
+                rec_size=f.read(4)[0]
+                CSPECG = f.read(15).decode("utf-8").split() #struct.unpack("15s", f.read(15)) #
+                print(f" (( REC_SIZE {rec_size} )). SPECIE= {CSPECG}")
+                f.read(rec_size-15+4)
+                CONCG = np.array([[ struct.unpack("f",f.read(4)) for j in range(nyg)] for i in range(nxg)])
+                #print("CONCG =")
+                #print(CONCG)
+                #plt.imshow(CONCG)
+                #plt.show()
+                #for i in range(nxg):
+                #    for j in range(nyg):
+                #        #CONCG(sp,t,i,j) = struc.unpack("f",f.read(4))
+                #        CONCG = struct.unpack("f",f.read(4))
+                #        #print(CONCG)
+                #        #call comprs(chisam(1,1,i),mxnxyg,tmp8,mxnxyg, cname,io8)
+                #        #write(io) ii                #just before comprs calls wrdat.
+                #        #write(iounit)cname,outarr   #this is what wrday does.
+                #f.read(4) #EOL
+
+
+            # ---    Discrete receptor concentrations
+            if ( nrec > 0 ):
+                rec_size=f.read(4)[0]
+                #for i in range(NREC):
+                #    CSPECD = struc.unpack("15s",f.read(15))
+                #    CONCCD(sp,t,i)=
+                f.read(4+rec_size) #EOL
+
+            # ---    Discrete CTSG receptor concentrations
+            if ( nctrec > 0):
+                rec_size=f.read(4)[0]
+                #for i in range(NCTREC):
+                #    CSPECD = struc.unpack("15s",f.read(15))
+                #    CONCCT(sp,t,i)=
+                f.read(4+rec_size) #EOL
+
 
 #  READ(iunit)nyrb,njulb,nhrb,nsecb,nyre,njule,nhre,nsece
 #  READ(iunit) istype,isnum,sname,sxkm,sykm
@@ -161,76 +228,4 @@ with open(file, "rb") as f:
 #  and
 #     nxg = IESAMP - IBSAMP+1
 #     nyg = JESAMP - JBSAMP+1
-
-
-#c ---------------------------------------------------------------
-#c --- WRITE CONCENTRATIONS TO DISK   (g/m**3,odour_units,Bq/m**3)
-#c ---------------------------------------------------------------
-#c
-#c --- Output date/hour times use 0-23 convention so that hour 24
-#c --- of day 12 starts at 23 0000 on day 12 and ends at 00 0000
-#c --- on day 13.
-#      if(icon.ne.1)go to 492
-#c
-#c --- Write date/time and source data records
-#      write(io8)nyrab,njulab,nhrab,nsecab,nyre,njule,nhre,nsece
-#      write(io8)ktype,ksource,csrcnam,xmapkm,ymapkm
-#c
-#      do 400 ig=1,ngrup
-#c --- Identify array storage location for this group
-#      i=istore(ig)
-#c
-#c --- Only species-groups specified are stored on disk
-#      if(ioutop(2,ig).eq.1)then
-#         cname=cgrup(ig)
-#         cname(13:15)='  1'
-#c
-#c ---    Gridded receptor concentrations
-#         if(lsamp) then
-#            if(ifull.eq.1)then
-#               if(lcomprs)then
-#c ---             Write compressed data records
-#                  call comprs(chisam(1,1,i),mxnxyg,tmp8,mxnxyg,
-#     1              cname,io8)
-#               else
-#c ---             Write uncompressed data record
-#                  call wrdat(io8,cname,chisam(1,1,i),nxsam,nysam)
-#               endif
-#            else
-#               call xtract(chisam(1,1,i),mxnxg,mxnyg,nxsam,nysam,tmp7)
-#               if(lcomprs)then
-#c ---             Write compressed data records
-#                  nwords=nxsam*nysam
-#                  call comprs(tmp7,nwords,tmp8,mxnxyg,cname,io8)
-#               else
-#c ---             Write uncompressed data record
-#                  call wrdat(io8,cname,tmp7,nxsam,nysam)
-#               endif
-#            endif
-#         endif
-#c
-#c ---    Discrete receptor concentrations
-#         if(nrec .GT. 0) then
-#            if(lcomprs)then
-#c ---          Write compressed data records
-#               call comprs(chirec(1,i),nrec,tmp3,mxrec,cname,io8)
-#            else
-#c ---          Write uncompressed data record
-#               call wrdat(io8,cname,chirec(1,i),nrec,1)
-#            endif
-#         endif
-#c
-#c ---    Discrete CTSG receptor concentrations
-#         if(nctrec .GT. 0) then
-#            if(lcomprs)then
-#c ---          Write compressed data records
-#               call comprs(chict(1,i),nctrec,tmp5,mxrect,cname,io8)
-#            else
-#c ---          Write uncompressed data record
-#               call wrdat(io8,cname,chict(1,i),nctrec,1)
-#            endif
-#         endif
-#      endif
-#400   continue
-#492   continue
 
