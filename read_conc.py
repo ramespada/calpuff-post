@@ -5,6 +5,15 @@ import numpy as np
 from matplotlib import pyplot as plt
 file = "conc.dat"
 
+def decompress(xwork):
+    xdat = []
+    for value in xwork:
+        if value > 0.0:
+            xdat.append(value)
+        else:
+            xdat.extend([0.0] * int(-value))
+    return xdat
+
 # Open the binary file
 with open(file, "rb") as f:
 
@@ -51,13 +60,11 @@ with open(file, "rb") as f:
 
     f.read(4) #close record
 
-    if ( lcomprs ): print("(!) ¡¡ COMPRESED DATA !! (!)")
-
     print(f"Model: {MODEL}, Version: {VER}, Level: {LEVEL}")
-    print(f"   Start Year: {IBYR}, Julian Day: {IBJUL}, Hour: {IBHR} ({ABTZ})")
-    print(f"   Length of run: {IRLG}, Avg. Time: {IAVG}, TimeStep: {NSECDT} sec.")
+    print(f"   Start Date. Year: {IBYR}, Julian Day: {IBJUL}, Hour: {IBHR} ({ABTZ})")
+    print(f"   Run Lenght: {IRLG}. Avg. Time: {IAVG}. TimeStep: {NSECDT} secs.")
     print(f"   Grid size: {NX}x{NY}. Cell size: {DXKM}km x  {DYKM}km. Xmin, Ymin: ({XORIGKM},{YORIGKM})")
-    print( "   Proj:",iutmzn,feast,fnorth,rnlat0,relon0,xlat1,xlat2 )
+    print( "   Proj. parameters:",iutmzn,feast,fnorth,rnlat0,relon0,xlat1,xlat2 )
     print(f"   {proj}")
     print(f"   Number of species-groups: {nspout}")
     nxg = IESAMP - IBSAMP+1
@@ -159,34 +166,37 @@ with open(file, "rb") as f:
         f.read(4)
         print(f"2nd line: {ktype},{ksource},{csrcnam},{xmapkm},{ymapkm})")       
 
-        for sp in range(nspout):
+        #Loop on output species
+        for sp in range(nspout): 
 
             # ---    Gridded receptor concentrations
             if ( lsamp ):
+                #if compressed data
                 if ( lcomprs ):
                     rec_size = f.read(4)[0]
-                    ii = struct.unpack("i", f.read(4))      #header of compressed file, indicating record length.
+                    ii = struct.unpack("i", f.read(4))[0]      #header of compressed file, indicating record length "number of words".
                     f.read(4)
                     print(f" (( REC_SIZE {rec_size} )). II = {ii}")
 
-                rec_size=f.read(4)[0]
-                CSPECG = f.read(15).decode("utf-8").split() #struct.unpack("15s", f.read(15)) #
-                print(f" (( REC_SIZE {rec_size} )). SPECIE= {CSPECG}")
-                f.read(rec_size-15+4)
-                CONCG = np.array([[ struct.unpack("f",f.read(4)) for j in range(nyg)] for i in range(nxg)])
-                #print("CONCG =")
-                #print(CONCG)
-                #plt.imshow(CONCG)
-                #plt.show()
-                #for i in range(nxg):
-                #    for j in range(nyg):
-                #        #CONCG(sp,t,i,j) = struc.unpack("f",f.read(4))
-                #        CONCG = struct.unpack("f",f.read(4))
-                #        #print(CONCG)
-                #        #call comprs(chisam(1,1,i),mxnxyg,tmp8,mxnxyg, cname,io8)
-                #        #write(io) ii                #just before comprs calls wrdat.
-                #        #write(iounit)cname,outarr   #this is what wrday does.
-                #f.read(4) #EOL
+                    f.read(4)
+                    CSPECG = f.read(15).decode("utf-8").split() #struct.unpack("15s", f.read(15)) #
+                    raw = f.read(4 * ii)
+                    xwork = list(struct.unpack(f'{ii}f', raw))
+                    xdat = decompress(xwork)
+                    CONCG = np.array(xdat, dtype=np.float32).reshape((nyg, nxg), order='F')
+                    f.read(4) #EOL
+
+                else:
+                    rec_size=f.read(4)[0]
+                    CSPECG = f.read(15).decode("utf-8").split() #struct.unpack("15s", f.read(15)) #
+                    print(f" (( REC_SIZE {rec_size} )). SPECIE= {CSPECG}")
+                    CONCG = np.array([[ struct.unpack("f",f.read(4)) for j in range(nyg)] for i in range(nxg)])
+                    f.read(4) #EOL
+
+                print("CONCG =")
+                print(CONCG)
+                plt.imshow(CONCG)
+                plt.show()
 
 
             # ---    Discrete receptor concentrations
