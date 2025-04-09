@@ -108,13 +108,13 @@ with open(file, "rb") as f:
     # RECORD #NCOM+6 -- Discrete (non-gridded) receptor data
     if (nrec > 0):
         print(f"   Number of discrete receptors: {nrec}")
-        f.read(4) #close record
+        f.read(4) #
         for i in range(nrec):
             x[i],y[i],z[i],zng[i],irgrp[i] = struct.unpack("5f", f.read(20))
         f.read(4) #EOL
         
         # RECORD #NCOM+6a -- Receptor-group names
-        f.read(4) #close record
+        f.read(4) #
         for i in range(nrec):
             rgrpnam[i] = f.read(80).decode("utf-8").strip()
         f.read(4) #EOL
@@ -180,6 +180,7 @@ with open(file, "rb") as f:
 
                     f.read(4)
                     CSPECG = f.read(15).decode("utf-8").split() #struct.unpack("15s", f.read(15)) #
+                    print ("sp: ",CSPECG)
                     raw = f.read(4 * ii)
                     xwork = list(struct.unpack(f'{ii}f', raw))
                     xdat = decompress(xwork)
@@ -193,10 +194,10 @@ with open(file, "rb") as f:
                     CONCG = np.array([[ struct.unpack("f",f.read(4)) for j in range(nyg)] for i in range(nxg)])
                     f.read(4) #EOL
 
-                print("CONCG =")
-                print(CONCG)
-                plt.imshow(CONCG)
-                plt.show()
+                #print("CONCG =")
+                #print(CONCG)
+                #plt.imshow(CONCG)
+                #plt.show()
 
 
             # ---    Discrete receptor concentrations
