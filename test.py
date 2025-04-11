@@ -1,48 +1,57 @@
 #!/usr/bin/python3
 
+import numpy as np
+from scipy.interpolate import griddata
 from matplotlib import pyplot as plt
 import calpost
 
+# File path to calpuff output file
+#file='./data/conc_mumbai.dat'
+#file='./data/conc_losangeles.dat'
+file='./data/conc_ducson.dat'
+#file='./data/conc_waterloo.dat'
+
 # Open and parse a CALPUFF output file
-#calpuff_dat = calpost.read_file('./data/conc_mumbai.dat')
-#calpuff_dat = calpost.read_file('./data/conc_losangeles.dat')
-calpuff_dat = calpost.read_file('./data/conc_ducson.dat')
-#calpuff_dat = calpost.read_file('./data/conc_waterloo.dat')
+dat = calpost.read_file(file)
 
 # Print access parsed information
-calpuff_dat.info()           
+dat.info()           
 
-print(calpuff_dat.model_version    )
-
-pollut=calpuff_dat.species[0]
+# Get specie name
+pollut=dat.species[0]
 
 # Get discrete receptor concentrations.
-X = calpuff_dat.x_r
-Y = calpuff_dat.y_r
-C = calpuff_dat.get_discrete_data(pollut)
-
-plt.scatter(X, Y, c=C[1,:],         # Color values
-    cmap='viridis',                 # Colormap (options: 'viridis', 'plasma', 'cool', 'jet', etc.)
-    alpha=0.8,                      # Transparency (0=transparent, 1=opaque)
-    edgecolors='k',                 # Edge color of markers ('k'=black)
-    s=100                           # Marker size
-)
-plt.show()
+X,Y   = dat.get_coordinates()
 
 ## Get gridded concentrations.
-#X,Y = calpuff_dat.get_coordinates()
-#C   = calpuff_dat.get_data(pollut)
-#
-#plt.contourf(X,Y,C[4,:,:])
-#plt.show()
-#
-#### Ask to compute time-averaged concentrations for specific pollutant.
-##
-#C_1hr = calpuff_dat.time_avg_max(calpuff_dat.species[0], 1)
-# 
-#plt.imshow(C_1hr)
-#plt.show()
-#
-### Get ranked values table for a given pollutant:
-# 
- 
+C     = dat.get_data(pollut)
+
+## Compute time-averaged concentrations for specific pollutant.
+C_1hr = dat.get_time_avg_max(pollut, 1)
+
+if ( dat.ndrec > dat.ngrec ): # if discrete receptor is
+    # Create a regular grid covering the domain of X and Y
+    xi = np.arange(dat.x0, np.max(X), dat.dx)
+    yi = np.arange(dat.y0, np.max(Y), dat.dy)
+    X_grid, Y_grid = np.meshgrid(xi, yi)
+    C_grid=np.zeros([dat.run_length, len(xi), len(yi)])
+    points = np.column_stack((X, Y))
+
+    # Perform bilinear (linear) interpolation
+    for t in range(dat.run_length):
+        C_grid[t,:,:] = griddata(points, C[t,:], (X_grid, Y_grid), method='linear')
+
+    C_grid_1hr=griddata(points, C_1hr, (X_grid, Y_grid), method='linear')
+
+    X=X_grid; Y=Y_grid 
+    C=C_grid
+    C_1hr=C_grid_1hr
+
+levels=[0.02,0.03,0.05,0.08,0.10,0.3,0.5,0.8,1.0,1.86]
+pf=plt.contourf(X,Y,C_1hr*1e6, alpha=0.6,cmap="Spectral_r",levels=levels) #,norm = LogNorm())
+cbar=plt.colorbar(pf, shrink=0.7)
+
+pc=plt.contour(X,Y,C_1hr*1e6, alpha=0.8,colors='black', linewidths=0.5, levels=levels)
+plt.clabel(pc, fmt='%.2f', fontsize=6)
+plt.show()
+
