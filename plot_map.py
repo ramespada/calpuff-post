@@ -10,23 +10,106 @@ from matplotlib.colors import LogNorm
 
 import calpost
 
-#polluts=("CO", "CO", "NOx", "NOx", "SO2", "SO2", "PM10", "PM10", "PM25", "PM25") #, "H2S")
-#periods=("1", "8", "1", "ANNUAL", "1", "24", "24", "ANNUAL", "24", "ANNUAL") #, "8")
+import math
 
+def gen_levels(minval, maxval, nlevels):
+    if minval <= 0 or maxval <= 0:
+        raise ValueError("Both minval and maxval must be positive numbers")
+    if minval >= maxval:
+        raise ValueError("minval must be less than maxval")
+    if nlevels < 1:
+        raise ValueError("nlevels must be at least 1")
 
-puff=calpost.read_file('conc.dat')
+    # Calculate logarithmic range
+    log_min = math.log10(minval)
+    log_max = math.log10(maxval)
 
-X,Y=puff.get_coordinates()
+    # Generate initial candidates in log space
+    log_candidates = []
+
+    # Always include the endpoints
+    log_candidates.append(log_min)
+    log_candidates.append(log_max)
+
+    # Generate key numbers (1 and 5 in each decade)
+    current_decade = math.floor(log_min)
+    while current_decade <= math.ceil(log_max):
+        # Add 1 and 5 in this decade
+        log1 = current_decade
+        log5 = current_decade + math.log10(5)
+
+        if log1 > log_min and log1 < log_max:
+            log_candidates.append(log1)
+        if log5 > log_min and log5 < log_max:
+            log_candidates.append(log5)
+
+        current_decade += 1
+
+    # Add evenly spaced levels in log space (if needed to reach nlevels)
+    if len(log_candidates) < nlevels + 1:
+        additional_points = nlevels + 1 - len(log_candidates)
+        step = (log_max - log_min) / (additional_points + 1)
+        for i in range(1, additional_points + 1):
+            log_point = log_min + i * step
+            if log_point not in log_candidates:
+                log_candidates.append(log_point)
+
+    # Convert back to linear space and round to proper form
+    candidates = [10**x for x in log_candidates]
+
+    # Round to have only one non-zero digit
+    def round_to_single_digit(x):
+        if x == 0:
+            return 0
+        magnitude = 10 ** math.floor(math.log10(x))
+        first_digit = round(x / magnitude)
+        return first_digit * magnitude
+
+    rounded = [round_to_single_digit(x) for x in candidates]
+
+    # Remove duplicates and sort
+    unique_levels = sorted(list(set(rounded)))
+
+    # Ensure minval and maxval are exactly represented
+    unique_levels[0] = minval
+    unique_levels[-1] = maxval
+
+    # If we still don't have enough levels, add more while maintaining constraints
+    while len(unique_levels) < nlevels + 1:
+        # Find the largest gap
+        max_gap = 0
+        gap_index = 0
+        for i in range(len(unique_levels) - 1):
+            gap = unique_levels[i+1] - unique_levels[i]
+            if gap > max_gap:
+                max_gap = gap
+                gap_index = i
+
+        # Add midpoint in log space
+        log_mid = (math.log10(unique_levels[gap_index]) +
+                   math.log10(unique_levels[gap_index+1])) / 2
+        new_val = round_to_single_digit(10**log_mid)
+        unique_levels.append(new_val)
+        unique_levels = sorted(list(set(unique_levels)))
+
+    return sorted(unique_levels)
+
+#puff=calpost.read_file('conc_losangeles.dat')
+#puff=calpost.read_file('conc_ducson.dat')
+puff=calpost.read_file('conc_waterloo.dat')
+#puff=calpost.read_file('conc_mumbai.dat')
+
+X,Y = puff.get_coordinates()
 
 xmin=np.min(X) 
 xmax=np.max(X)
 ymin=np.min(Y)
 ymax=np.max(Y) 
 
-print(puff.proj['hemis']=='S')
 projection = ccrs.UTM(zone=puff.proj["zone"], southern_hemisphere=(puff.proj['hemis']=='S'))
 request=cimgt.GoogleTiles(style='satellite')
 
+nlev=10
 borde=-20
 extent=[xmin-borde,xmax+borde,ymin-borde,ymax+borde]
 
@@ -38,7 +121,7 @@ for i in range(len(polluts)):
     unit=puff.units[i] #"ug/m3"
     
     C=puff.time_avg_max(pollutid,period)
-    C=C*1e6
+    C=C#*1e6
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1, projection=projection)
     
@@ -48,18 +131,14 @@ for i in range(len(polluts)):
     ax.tick_params(labelsize=8)
     ax.add_image(request,12)
     
-    minval=0.0
+    minval=max(1e-3, np.nanmin(C))
     maxval=1.0*np.nanmax(C)
-    #levels=np.array([0,0.001,0.005,0.01,0.02,0.1,0.15,0.2,0.5,0.7,0.9,1,3,5,7,10,15,20,50,80,90,100,150,200])#, 25, 50, 100]) ç
-    #levels=np.linspace(minval,maxval,9)
-    levels=np.array([0.7,1.0,2.0,5.0,7.0,10.0,20.0,50.0,70.0,72.1])
+    levels=gen_levels(minval,maxval,nlev)
 
-
-    #p=ax.contourf(X,Y,C[:,:],alpha=0.6,cmap='viridis',levels=levels)    
-    pf=ax.contourf(X,Y,C[:,:],alpha=0.6,cmap="Spectral_r",levels=levels)#,cmap='RdBu_r',levels=levels,norm = LogNorm())    
+    pf=ax.contourf(X,Y,C[:,:],alpha=0.6,cmap="Spectral_r",levels=levels,norm = LogNorm())
     cbar=fig.colorbar(pf, shrink=0.7)
 
-    pc=ax.contour(X,Y,C[:,:],alpha=0.6,colors='black', linewidths=0.5, levels=levels)
+    pc=ax.contour(X,Y,C[:,:],alpha=0.8,colors='black', linewidths=0.5, levels=levels)
     ax.clabel(pc, fmt='%.2f', fontsize=6)
 
     cbar.ax.set_title(pollutid+"_"+str(period)+"\n("+unit+")")

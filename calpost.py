@@ -14,14 +14,15 @@ def _decompress(xwork):
         if value > 0.0:
             xdat.append(value)
         else:
-            xdat.extend([0.0] * int(-value))
+            xdat.extend([0.0]*int(-value))
     return xdat
 
 def _skip_n_lines(f,n):
     for _ in range(n):
-        rmark= struct.unpack("i", f.read(4))[0] #f.read(4)[0]
-        f.seek(rmark, 1)
+        rmark= struct.unpack("i", f.read(4))[0] 
+        f.seek(rmark,1)
         f.seek(4    ,1)
+
 
 class CalpuffOutput:
     def __init__(self):
@@ -69,7 +70,15 @@ class CalpuffOutput:
         # Receptors information
         self.has_gridded_receptors: bool = 0        # Is there a grid of receptors?
         self.nrec: int = 0                          # Number of discrete receptors
+        self.x_r: Optional[np.ndarray]
+        self.y_r: Optional[np.ndarray]
+        self.z_r: Optional[np.ndarray]                       #ground elevation
+        self.h_r: Optional[np.ndarray]                       #above ground elevation
+        self.igrp: List[int]
+        self.ihill_r: List[int]
         self.nctrec: int = 0                        # Number of complex-terrain receptors
+
+        self.rgroups: List[int]
 
         ## The actual data - using xarray for labeled multi-dimensional data
         #self.data: Optional[xr.Dataset] = None
@@ -80,6 +89,7 @@ class CalpuffOutput:
         edate=self.end_date.strftime("%Y %j %H:%M:%S")
 
         print(f"Calpuff Output File \"{self.filepath}\":")
+        if (self.is_compressed): print(f"(Compressed)")
         print(f"{self.title}")
         print(f"   Start Date: {idate}.")
         print(f"   End   Date: {edate}.")
@@ -107,90 +117,185 @@ class CalpuffOutput:
         print(f"      Number of source by type  rec.: {self.nsrcbytype}")
 
     def get_coordinates(self):
-        nx = self.grid["nx"]
-        ny = self.grid["ny"]
-        dx = self.grid["dx"]
-        dy = self.grid["dy"]
-        x0 = self.grid["x0"]
-        y0 = self.grid["y0"]
+        nx = self.grid["nx"]; ny = self.grid["ny"]
+        dx = self.grid["dx"]; dy = self.grid["dy"]
+        x0 = self.grid["x0"]; y0 = self.grid["y0"]
 
         x = x0 + np.arange(nx) * dx
         y = y0 + np.arange(ny) * dy
 
         # create 2D meshgrid of coordinates
-        X, Y = np.meshgrid(x, y, indexing='xy')  # 'xy' = X rows, Y columns
+        X, Y = np.meshgrid(x, y) 
 
         return X, Y
 
-    def get_data(self, pollut):
+    def get_gridded_data(self, pollut):
          """
          Returns CALPUFF gridded receptors data.
          """
+         if ( not self.has_gridded_receptors ):
+             raise ValueError(f"No gridded receptors found in file {self.filepath}")
+         if ( pollut in self.species ):
+             raise ValueError(f"No pollutant {pollut} found in file {self.filepath}")
+
+         NT=self.run_length
+         NX=self.grid['nx']
+         NY=self.grid['ny']
+         out = np.zeros([NT, NY, NX])
+
          with open(self.filepath, "rb") as f:
 
-            #HEADER:
+            #Skip header
             _skip_n_lines(f,7+self.NCOM)
             if ( self.nrec > 0):
                 _skip_n_lines(f, 2)          # Record #NCOM+6 : discrete receptors
-                                            # Record #NCOM+6a: receptors group names
+                                             # Record #NCOM+6a: receptors group names
             if (self.nctrec > 0):
                 _skip_n_lines(f,1)           # Record #NCOM+7 : complex terrain receptors    
             for i in range(self.nsrctype):
                 n=self.nsrcbytype[i]
                 if ( n > 0 ):
                     _skip_n_lines(f,1)       # Record #NCOM+8 : source names
-            #---
 
-            NT=self.run_length
-            NX=self.grid['nx']
-            NY=self.grid['ny']
-            out = np.zeros([NT, NX, NY])
-            ##MAIN DATA:
+            #Main data:
             for t in range(NT): #temporal loop
                 #write(io8)nyrab,njulab,nhrab,nsecab,nyre,njule,nhre,nsece
                 f.read(4)[0]
                 yr1,dy1,hr1,sec1, yr2,dy2,hr2,sec2 = struct.unpack("8i", f.read(32))
                 f.read(4) #EOL
-                #print(f"Record date: {yr1} - {dy1} - {hr1} hour.")
-                #print(f"Record date: {yr2} - {dy2} - {hr2} hour.")
             
                 #write(io8)ktype,ksource,csrcnam,xmapkm,ymapkm
                 f.read(4)[0]
                 ktype,ksource,csrcnam,xmapkm,ymapkm = struct.unpack("2i 16s 2f", f.read(32))
                 f.read(4)
-                #print(f"2nd line: {ktype},{ksource},{csrcnam},{xmapkm},{ymapkm})")       
             
                 #Loop on output species
                 for sp in range(self.nsp): 
-            
-                    if (pollut == self.species[sp]):
+
+                    # ---    Gridded receptor concentrations
+                    if ( pollut == self.species[sp] ):
     
-                       # ---    Gridded receptor concentrations
-                       if ( self.has_gridded_receptors ):
-    
-                           if ( self.is_compressed ):
-                               rec_size = f.read(4)[0]
-                               ii = struct.unpack("i", f.read(4))[0] # "number of words" in compressed record.
-                               f.read(4)
+                        if ( self.is_compressed ):
+                            f.read(4)
+                            ii = struct.unpack("i", f.read(4))[0] # "number of words" in compressed record.
+                            f.read(4)
             
-                               f.read(4)
-                               specie = f.read(15).decode("utf-8").split() 
-                               raw = f.read(4 * ii)
-                               xdat = _decompress( list( struct.unpack(f'{ii}f', raw) ) )
-                               out[t,:,:] = np.array(xdat, dtype=np.float32).reshape((NX,NY)) #, order='F')
-                               f.read(4) #EOL
-            
-                           else:
-                               rec_size=f.read(4)[0]
-                               specie = f.read(15).decode("utf-8").split() #struct.unpack("15s", f.read(15)) #
-                               out[t,:,:] = np.array([[ struct.unpack("f",f.read(4)) for i in range(nxg)] for j in range(nyg)])
-                               f.read(4) #EOL
+                            f.read(4)
+                            specie = f.read(15).decode("utf-8").split() 
+                            raw = list(struct.unpack(f'{ii}f', f.read(4*ii) ))
+                            xdat = _decompress( raw )
+                            out[t,:,:] = np.array(xdat).reshape((NY,NX)) #, order='F')
+                            f.read(4) #EOL
+
+                        else:
+                            f.read(4)
+                            specie = f.read(15).decode("utf-8").split() 
+                            out[t,:,:] = np.array([[ struct.unpack("f",f.read(4)) for i in range(nyg)] for j in range(nxg)])
+                            f.read(4) #EOL
+ 
                     else:
-                        _skip_n_lines(f, 2)
-    
-                    _skip_n_lines(f,self.nrec+self.nctrec)
+                        if (self.is_compressed):
+                            _skip_n_lines(f, 2)
+                        else:
+                            _skip_n_lines(f, 1)
+
+                    ## ---    Discrete receptor concentrations
+                    if ( self.nrec > 0):
+                        _skip_n_lines(f,1) #self.nrec+self.nctrec)
+
+                    ## ---    Discrete CTSG receptor concentrations
+                    if ( self.nctrec > 0):
+                        _skip_n_lines(f,1) #self.nrec+self.nctrec)
         
          return(out)
+
+    def get_discrete_data(self, pollut):
+         """
+         Returns CALPUFF discrete receptors data.
+         """
+        
+         if ( self.nrec < 1):
+             raise ValueError(f"No discrete receptors found in file {self.filepath}")
+         if ( not pollut in self.species ):
+             raise ValueError(f"No pollutant {pollut} found in file {self.filepath}")
+
+         NT = self.run_length
+         out = np.zeros([NT, self.nrec ])
+                                                                                             
+         with open( self.filepath, "rb") as f:
+
+            #Skip header
+            _skip_n_lines(f,7+self.NCOM)
+            if ( self.nrec > 0):
+                _skip_n_lines(f, 2)          # Record #NCOM+6 : discrete receptors
+                                             # Record #NCOM+6a: receptors group names
+            if (self.nctrec > 0):
+                _skip_n_lines(f,1)           # Record #NCOM+7 : complex terrain receptors    
+
+            for i in range(self.nsrctype):
+                n=self.nsrcbytype[i]
+                if ( n > 0 ):
+                    _skip_n_lines(f,1)       # Record #NCOM+8 : source names
+
+
+            #Main data:
+            for t in range(NT): #temporal loop
+                #write(io8)nyrab,njulab,nhrab,nsecab,nyre,njule,nhre,nsece
+                f.read(4)[0]
+                yr1,dy1,hr1,sec1, yr2,dy2,hr2,sec2 = struct.unpack("8i", f.read(32))
+                f.read(4) #EOL
+                
+                #write(io8)ktype,ksource,csrcnam,xmapkm,ymapkm
+                f.read(4)[0]
+                ktype,ksource,csrcnam,xmapkm,ymapkm = struct.unpack("2i 16s 2f", f.read(32))
+                f.read(4)
+
+                #Loop on output species                                                                                                    
+                for sp in range(self.nsp): 
+                                                                                                                                 
+                    # ---    Gridded receptor concentrations
+                    if ( self.has_gridded_receptors ):
+                        if ( pollut == self.species[sp] ):
+                                                                                                                                 
+                            if ( self.is_compressed ):
+                                _skip_n_lines(f,2)
+
+                            else:
+                                _skip_n_lines(f,1)
+                                                                                                                             
+                    ## ---    Discrete receptor concentrations
+                    if ( self.species[sp] == pollut ):
+
+                        if ( self.is_compressed ):
+                            f.read(4)
+                            ii = struct.unpack("i", f.read(4))[0] #
+                            f.read(4)
+                                                                                                            
+                            f.read(4)
+                            specie = f.read(15).decode("utf-8").split() 
+                            raw = list(struct.unpack(f'{ii}f', f.read(4*ii) ))
+                            xdat = _decompress( raw )
+                            out[t,:] = np.array(xdat) 
+                            f.read(4) #EOL
+                        else:
+                            f.read(4)
+                            specie   = struct.unpack("15s",f.read(15))
+                            for i in range(self.nrec):
+                                tmp= struct.unpack("f",f.read(4))[0]
+                                print(tmp)
+                                out[t,i] = tmp
+                            f.read(4)
+                    else:
+                        _skip_n_lines(f,1)
+
+                    ## ---    Discrete CTSG receptor concentrations
+                    if ( self.nctrec > 0):
+                        _skip_n_lines(f,1) #self.nrec+self.nctrec)
+
+         return(out)
+
+
+
     def time_avg_max(self, pollut, interval):
         """
         Computes, for each grid cell, the maximum of the time-averaged fields.
@@ -277,18 +382,22 @@ def read_file(filepath: str) -> 'CalpuffOutput':
         NSSTA = struct.unpack("i", f.read(4))                            #n ssurface stations
         IBCOMP, IECOMP, JBCOMP, JECOMP = struct.unpack("4i", f.read(16)) #computational grid
         IBSAMP, JBSAMP, IESAMP, JESAMP = struct.unpack("4i", f.read(16)) #sampling grid
-        MESHDN = struct.unpack("i", f.read(4))                           #sampling grid spacing factor
+        MESHDN = struct.unpack("i", f.read(4))[0]                        #sampling grid spacing factor
     
         nsrctype, msource, nrec, nrgrp, nctrec  = struct.unpack("5i", f.read(20)) #
-        lsamp, nspout, lcomprs, i2dmet          = struct.unpack("4i", f.read(16)) # sample grid?. num of species. data compresed?, rel humidity source data?
+        lsamp, nspout, lcomprs, i2dmet          = struct.unpack("4i", f.read(16)) # sample grid? # of species. is data compresed?, rel humidity source data?
         iutmzn, feast,fnorth,rnlat0,relon0,xlat1,xlat2 = struct.unpack("i 6f", f.read(28))       # proj parameters.
-        #proj= f.read(96).decode("utf-8").strip()#pmap,utmhem,datum,daten,clat0,clon0,clat1,clat2 # proj parameters string form.
         pmap,utmhem,datum,daten,clat0,clon0,clat1,clat2 = struct.unpack("8s 4s 8s 12s 16s 16s 16s 16s", f.read(96)) # proj parameters.
         f.read(4) #close record
 
-        nxg = IESAMP - IBSAMP+1
-        nyg = JESAMP - JBSAMP+1 
-    
+        #Definitions of Sample Grid (which is the one reported)
+        nxg = (IESAMP - IBSAMP )*MESHDN +1
+        nyg = (JESAMP - JBSAMP )*MESHDN +1
+        dxg = (DXKM/float(MESHDN))*1000.
+        dyg = (DYKM/float(MESHDN))*1000.
+        x0g = (XORIGKM+IBSAMP*DXKM)*1000
+        y0g = (YORIGKM+JBSAMP*DYKM)*1000
+
         # NON-REPORTED RECORD: how many sources from each type
         #write(io8) (nsrcbytype(n),n=1,nsrctype)
         f.read(4) #record marker
@@ -318,17 +427,33 @@ def read_file(filepath: str) -> 'CalpuffOutput':
         f.read(4) #EOL
     
         # RECORD #NCOM+6 -- Discrete (non-gridded) receptor data
+        #write(io8)(tmp3(n),n=1,nrec),
+        #1     (tmp4(n2),n2=1,nrec),(elevng(n3),n3=1,nrec),
+        #2     (zng(n4),n4=1,nrec), (irgrp(n5),n5=1,nrec)
         if (nrec > 0):
+            x=np.zeros(nrec)
+            y=np.zeros(nrec) 
+            z=np.zeros(nrec) 
+            h=np.zeros(nrec)
+            igrp=[0]*nrec
             f.read(4) #record marker
             for i in range(nrec):
-                x[i],y[i],z[i],zng[i],irgrp[i] = struct.unpack("5f", f.read(20))
+                x[i], y[i], z[i], h[i], igrp[i] = struct.unpack("4f i", f.read(20))
             f.read(4) #EOL
             
             # RECORD #NCOM+6a -- Receptor-group names
+            rgrpnam=[""]*nrgrp
             f.read(4) #record marker
-            for i in range(nrec):
+            for i in range(nrgrp):
                 rgrpnam[i] = f.read(80).decode("utf-8").strip()
             f.read(4) #EOL
+
+            output.x_r = x*1e3
+            output.y_r = y*1e3
+            output.z_r = z
+            output.h_r = h
+            output.igrp = igrp
+            output.rgroups = rgrpnam
     
         # RECORD #NCOM+7 -- Complex terrain receptor data
         if (nctrec > 0):
@@ -336,7 +461,7 @@ def read_file(filepath: str) -> 'CalpuffOutput':
             for i in range(nctrec):
                 x[i],y[i],z[i],ihill[i] = struct.unpack("5f", f.read(20))
             f.read(4) #EOL
-    
+            
         # RECORD #NCOM+8 -- Source names
         #do itype=1,nsrctype
         #if(nsrcbytype(itype).GT.0) then
@@ -365,10 +490,10 @@ def read_file(filepath: str) -> 'CalpuffOutput':
         output.end_date=output.start_date+output.time_step*output.run_length
                                                                                             
         # Grid params:
-        output.grid['nx'] = NX           ;  output.grid['ny'] = NY
-        output.grid['x0'] = XORIGKM*1000.;  output.grid['y0'] = YORIGKM*1000
-        output.grid['dx'] = DXKM*1000   ;  output.grid['dy'] = DYKM*1000
-                                                                                            
+        output.grid['nx'] = nxg          ;  output.grid['ny'] = nyg
+        output.grid['x0'] = x0g          ;  output.grid['y0'] = y0g         
+        output.grid['dx'] = dxg          ;  output.grid['dy'] = dyg      
+
         # Proj params:
         output.proj['crs']   = pmap.decode("utf-8").strip()     #
         output.proj['datum'] = datum.decode("utf-8").strip()    #
@@ -397,23 +522,16 @@ def read_file(filepath: str) -> 'CalpuffOutput':
         return(output)
 
 
-#def get_discrete_receptors(self):
-               ## ---    Discrete receptor concentrations
-               #if ( nrec > 0 ):
-               #    rec_size=f.read(4)[0]
-               #    #for i in range(self.nrec):
-               #    #    CSPECD = struc.unpack("15s",f.read(15))
-               #    #    CONCCD(sp,t,i)=
-               #    f.read(4+rec_size) #EOL
         
 #def get_ctsg_receptors(self):
                ## ---    Discrete CTSG receptor concentrations
                #if ( nctrec > 0):
                #    rec_size=f.read(4)[0]
                #    #for i in range(self.nctrec):
-               #    #    CSPECD = struc.unpack("15s",f.read(15))
+               #    #    CSPECD = struct.unpack("15s",f.read(15))
                #    #    CONCCT(sp,t,i)=
                #    f.read(4+rec_size) #EOL
+
 
 
 #  READ(iunit)nyrb,njulb,nhrb,nsecb,nyre,njule,nhre,nsece
