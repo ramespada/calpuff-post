@@ -27,7 +27,7 @@ X,Y   = dat.get_coordinates()
 C     = dat.get_data(pollut)
 
 ## Compute time-averaged concentrations for specific pollutant.
-C_1hr = dat.get_time_avg_max(pollut, 1)
+C_1hr = dat.get_time_avg_max(pollut, 24)
 
 if ( dat.ndrec > dat.ngrec ): # if discrete receptor is
     # Create a regular grid covering the domain of X and Y

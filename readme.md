@@ -9,9 +9,9 @@ This library is capable of:
  - [ ] Compute time-averaged magnitudes for a given specie and time-interval.
  - [ ] Get n-th higher values for a given specie and time-interval.
 
-What this library does not do:
- - [ ] Make plots. (See `./scripts/plot_map.py`)
- - [ ] Make animations. (See `./scripts/make_anmation.py`)
+What this library does NOT do:
+ - [ ] Make plots. (See `./scripts/plot_avg.py`)
+ - [ ] Make animations. (See `./scripts/animation.py`)
  - [ ] Make tables. (See `./scripts/make_tables.py`)
 
 ## Dependencies:
@@ -25,8 +25,7 @@ This code uses the following python libraries:
 
 import calpost
 
-
-puff = calpost.read_file('./data/conc_ducson.dat')
+puff = calpost.read_file('./data/conc.dat')
 
 #Print file information:
 puff.info()
@@ -41,15 +40,12 @@ C = puff.get_data(specie)
 
 #Get time-averaged max value of a specific pollutant:
 
-C_1hr = puff.get_data(specie, hours=1)
+C_1hr = puff.get_time_avg_max(specie, hours=1)
 
 ```
 
 ### Objects:
-
- - `COUT`: *Calpuff OUTput*
-	+ `otype` (1: conc.dat, 2:dflx, 3:wflx, 4:dwflx, 5:vis)
- 	+ `start_date`, `end_date`
+ - `CalpuffOutput`
 
 ### Functions:
 
