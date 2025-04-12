@@ -1,23 +1,12 @@
 #!/bin/python3
 
-import struct
+from struct   import unpack
 from typing   import Optional, Dict, List, Tuple, Union
 from datetime import datetime, timedelta
 
 import numpy as np
 
-def _decompress(xwork):
-    xdat = []
-    for value in xwork:
-        if value > 0.0:
-            xdat.append(value)
-        else:
-            xdat.extend([0.0]*int(-value))
-    return xdat
-
-def _skip_n_lines(f,n):
-    for _ in range(n):
-        f.seek(struct.unpack("i", f.read(4))[0] + 4, 1)
+from .utils import (_decompress, _skip_n_lines)
 
 class CalpuffOutput:
     def __init__(self):
@@ -106,6 +95,9 @@ class CalpuffOutput:
         print(f"      Number of gridded    rec.: {self.ngrec} ")
         print(f"      Number of discrete   rec.: {self.ndrec} ")
         print(f"      Number of Cmpx Terr. rec.: {self.nctrec}")
+
+        print(f"      Number of receptor groups: {self.rgroups}")
+        #print(f"      Receptor groups          : {self.igrp}")
         print(f"")
         print(f"   Sources:")
         print(f"      Number of source type   : {self.nsrctype}")
@@ -164,12 +156,12 @@ class CalpuffOutput:
             for t in range(NT): #temporal loop
                 #write(io8)nyrab,njulab,nhrab,nsecab,nyre,njule,nhre,nsece
                 f.read(4)[0]
-                yr1,dy1,hr1,sec1, yr2,dy2,hr2,sec2 = struct.unpack("8i", f.read(32))
+                yr1,dy1,hr1,sec1, yr2,dy2,hr2,sec2 = unpack("8i", f.read(32))
                 f.read(4) #EOL
             
                 #write(io8)ktype,ksource,csrcnam,xmapkm,ymapkm
                 f.read(4)[0]
-                ktype,ksource,csrcnam,xmapkm,ymapkm = struct.unpack("2i 16s 2f", f.read(32))
+                ktype,ksource,csrcnam,xmapkm,ymapkm = unpack("2i 16s 2f", f.read(32))
                 f.read(4)
             
                 #Loop on output species
@@ -180,12 +172,12 @@ class CalpuffOutput:
     
                         if ( self.is_compressed ):
                             f.read(4)
-                            ii = struct.unpack("i", f.read(4))[0] # "number of words" in compressed record.
+                            ii = unpack("i", f.read(4))[0] # "number of words" in compressed record.
                             f.read(4)
             
                             f.read(4)
                             specie = f.read(15).decode("utf-8").split() 
-                            raw = list(struct.unpack(f'{ii}f', f.read(4*ii) ))
+                            raw = list(unpack(f'{ii}f', f.read(4*ii) ))
                             xdat = _decompress( raw )
                             out[t,:,:] = np.array(xdat).reshape((self.ny, self.nx)) #, order='F')
                             f.read(4) #EOL
@@ -193,7 +185,7 @@ class CalpuffOutput:
                         else:
                             f.read(4)
                             specie = f.read(15).decode("utf-8").split() 
-                            out[t,:,:] = np.array([[ struct.unpack("f",f.read(4)) for i in range(self.ny)] for j in range(self.nx)])
+                            out[t,:,:] = np.array([[ unpack("f",f.read(4)) for i in range(self.ny)] for j in range(self.nx)])
                             f.read(4) #EOL
  
                     else:
@@ -250,12 +242,12 @@ class CalpuffOutput:
             for t in range(NT): #temporal loop
                 #write(io8)nyrab,njulab,nhrab,nsecab,nyre,njule,nhre,nsece
                 f.read(4)[0]
-                yr1,dy1,hr1,sec1, yr2,dy2,hr2,sec2 = struct.unpack("8i", f.read(32))
+                yr1,dy1,hr1,sec1, yr2,dy2,hr2,sec2 = unpack("8i", f.read(32))
                 f.read(4) #EOL
                 
                 #write(io8)ktype,ksource,csrcnam,xmapkm,ymapkm
                 f.read(4)[0]
-                ktype,ksource,csrcnam,xmapkm,ymapkm = struct.unpack("2i 16s 2f", f.read(32))
+                ktype,ksource,csrcnam,xmapkm,ymapkm = unpack("2i 16s 2f", f.read(32))
                 f.read(4)
 
                 #Loop on output species  
@@ -276,20 +268,20 @@ class CalpuffOutput:
 
                         if ( self.is_compressed ):
                             f.read(4)
-                            ii = struct.unpack("i", f.read(4))[0] #
+                            ii = unpack("i", f.read(4))[0] #
                             f.read(4)
                                                                                                             
                             f.read(4)
                             specie = f.read(15).decode("utf-8").split() 
-                            raw = list(struct.unpack(f'{ii}f', f.read(4*ii) ))
+                            raw = list(unpack(f'{ii}f', f.read(4*ii) ))
                             xdat = _decompress( raw )
                             out[t,:] = np.array(xdat) 
                             f.read(4) #EOL
                         else:
                             f.read(4)
-                            specie   = struct.unpack("15s",f.read(15))
+                            specie   = unpack("15s",f.read(15))
                             for i in range(self.ndrec):
-                                tmp= struct.unpack("f",f.read(4))[0]
+                                tmp= unpack("f",f.read(4))[0]
                                 print(tmp)
                                 out[t,i] = tmp
                             f.read(4)
@@ -303,19 +295,20 @@ class CalpuffOutput:
          return(out)
 
     def get_data(self,pollut):
+
         if ( self.gridded_receptors):
             data = self.get_gridded_data(pollut) 
         elif ( self.ndrec > self.ngrec ):
             data = self.get_discrete_data(pollut)
         elif ( self.nctrec > self.ngrec ):
-            raise ValueError(f"get_data not implemented yet for Complex terrain receptors grids.")
+            raise ValueError(f"get_data not implemented yet for Complex terrain receptors.")
             #data = self.get_ct_data(pollut)
         else:
-            raise ValueError(f"Not sufficient receptors found to make extraction")
+            raise ValueError(f"Not sufficient receptors found to make data extraction")
 
         return(data)
 
-    def get_time_avg_max(self, pollut, interval):
+    def get_time_avg_max(self, pollut, interval, rank=1):
         """
         Computes, for each grid cell (of any rank), the maximum of the time-averaged fields.
     
@@ -328,14 +321,6 @@ class CalpuffOutput:
         """
 
         data = self.get_data(pollut)
-
-
-
-
-
-
-
-
 
         nt = data.shape[0]
         if nt % interval != 0:
@@ -352,11 +337,19 @@ class CalpuffOutput:
     
         # Average over the interval axis (axis=1)
         averaged = data_reshaped.mean(axis=1)
-    
-        # Max over the time-averaged fields (axis=0)
-        max_field = averaged.max(axis=0)
-    
-        return max_field
+        if rank > averaged.shape[0]:
+            raise ValueError(f"Requested nth max ({n}) is larger than the number of averaged time blocks ({averaged.shape[0]})")
+        
+        # Use np.partition to find the nth maximum efficiently
+        # The nth max is at index -n after sorting in descending order
+        sorted_vals = np.sort(averaged, axis=0)[::-1]  # Descending sort
+        nth_max = sorted_vals[rank - 1]  # n=1 means max
+        
+        ## Max over the time-averaged fields (axis=0)
+        #max_field = averaged.max(axis=0)
+        #return max_field
+
+        return nth_max
 
 def read_file(filepath: str) -> 'CalpuffOutput':
     """
@@ -390,7 +383,7 @@ def read_file(filepath: str) -> 'CalpuffOutput':
         # RECORD #2 --  NCOM     
         #write(io8) ncom
         f.read(4) #record marker
-        NCOM = struct.unpack("i", f.read(4))[0]
+        NCOM = unpack("i", f.read(4))[0]
         f.read(4) #end of record
 
         # RECORD #3 to NCOM+2 --  Comments.
@@ -405,20 +398,20 @@ def read_file(filepath: str) -> 'CalpuffOutput':
         #5 iutmzn,feast,fnorth,rnlat0,relon0,xlat1,xlat2,
         #6 pmap,utmhem,datum,daten,clat0,clon0,clat1,clat2
         f.read(4) 
-        MODEL, VERSION, LEVEL          = struct.unpack("12s 12s 12s", f.read(36))
-        IBYR, IBJUL, IBHR, IBSEC, ABTZ = struct.unpack("4i 8s",       f.read(24))
-        IRLG, IAVG, NSECDT = struct.unpack("3i", f.read(12))
-        NX,NY, DXKM,DYKM, IONE, XORIGKM,YORIGKM  = struct.unpack("2i 2f i 2f",f.read(28))
+        MODEL, VERSION, LEVEL          = unpack("12s 12s 12s", f.read(36))
+        IBYR, IBJUL, IBHR, IBSEC, ABTZ = unpack("4i 8s",       f.read(24))
+        IRLG, IAVG, NSECDT = unpack("3i", f.read(12))
+        NX,NY, DXKM,DYKM, IONE, XORIGKM,YORIGKM  = unpack("2i 2f i 2f",f.read(28))
 
-        nssta = struct.unpack("i", f.read(4))                            #n ssurface stations
-        IBCOMP, IECOMP, JBCOMP, JECOMP = struct.unpack("4i", f.read(16)) #computational grid
-        IBSAMP, JBSAMP, IESAMP, JESAMP = struct.unpack("4i", f.read(16)) #sampling grid
-        MESHDN = struct.unpack("i", f.read(4))[0]                        #sampling grid spacing factor
+        nssta = unpack("i", f.read(4))                            #n ssurface stations
+        IBCOMP, IECOMP, JBCOMP, JECOMP = unpack("4i", f.read(16)) #computational grid
+        IBSAMP, JBSAMP, IESAMP, JESAMP = unpack("4i", f.read(16)) #sampling grid
+        MESHDN = unpack("i", f.read(4))[0]                        #sampling grid spacing factor
     
-        nsrctype, msource, ndrec, nrgrp, nctrec  = struct.unpack("5i", f.read(20)) #
-        lsamp, nspout, lcomprs, i2dmet          = struct.unpack("4i", f.read(16))  #
-        iutmzn, feast,fnorth,rnlat0,relon0,xlat1,xlat2 = struct.unpack("i 6f", f.read(28))       # proj parameters.
-        pmap,utmhem,datum,daten,clat0,clon0,clat1,clat2 = struct.unpack("8s 4s 8s 12s 16s 16s 16s 16s", f.read(96)) # proj parameters.
+        nsrctype, msource, ndrec, nrgrp, nctrec  = unpack("5i", f.read(20)) #
+        lsamp, nspout, lcomprs, i2dmet          = unpack("4i", f.read(16))  #
+        iutmzn, feast,fnorth,rnlat0,relon0,xlat1,xlat2 = unpack("i 6f", f.read(28))       # proj parameters.
+        pmap,utmhem,datum,daten,clat0,clon0,clat1,clat2 = unpack("8s 4s 8s 12s 16s 16s 16s 16s", f.read(96)) # proj parameters.
         f.read(4) #close record
 
         #Definitions of Sample Grid (which is the one reported)
@@ -432,11 +425,11 @@ def read_file(filepath: str) -> 'CalpuffOutput':
         # NON-REPORTED RECORD: how many sources from each type
         #write(io8) (nsrcbytype(n),n=1,nsrctype)
         f.read(4) #record marker
-        nsrcbytype = struct.unpack(str(nsrctype)+"i", f.read(nsrctype*4)) #[nsrcbytype(n),n=1,nsrctype]
+        nsrcbytype = unpack(str(nsrctype)+"i", f.read(nsrctype*4)) #[nsrcbytype(n),n=1,nsrctype]
         f.read(4) #close record
     
         # RECORD #NCOM+4 -- TITLE
-        f.read(4) #record marker (record size in bytes)
+        f.read(4) #record marker
         TITLE = f.read(80*3).decode("utf-8").strip()
         f.read(4) #EOL
     
@@ -444,7 +437,7 @@ def read_file(filepath: str) -> 'CalpuffOutput':
         #write(io8)(csout(n),n=1,nspout)
         #for grp in range(ngrp):
         f.read(4)
-        csout=[f.read(15).decode("utf-8").strip() for _ in range(nspout)]
+        csout=[f.read(15).decode("utf-8")[0:11].strip() for _ in range(nspout)]  #1-12: specie's name, 13-15: layer
         f.read(4) #EOL
     
         # RECORD #NCOM+5a-- List of species-groups units 
@@ -459,11 +452,11 @@ def read_file(filepath: str) -> 'CalpuffOutput':
         #2     (zng(n4),n4=1,ndrec), (irgrp(n5),n5=1,ndrec)
         if (ndrec > 0):
             f.read(4) #record marker
-            out.x = np.array([ struct.unpack("f",f.read(4)) for _ in range(ndrec)])*1e3 #km to m
-            out.y = np.array([ struct.unpack("f",f.read(4)) for _ in range(ndrec)])*1e3 #km to m
-            out.z = np.array([ struct.unpack("f",f.read(4)) for _ in range(ndrec)])
-            out.h = np.array([ struct.unpack("f",f.read(4)) for _ in range(ndrec)])
-            out.igrp= np.array([ struct.unpack("i",f.read(4)) for _ in range(ndrec)])
+            out.x = np.array([ unpack("f",f.read(4)) for _ in range(ndrec)])*1e3 #km to m
+            out.y = np.array([ unpack("f",f.read(4)) for _ in range(ndrec)])*1e3 #km to m
+            out.z = np.array([ unpack("f",f.read(4)) for _ in range(ndrec)])
+            out.h = np.array([ unpack("f",f.read(4)) for _ in range(ndrec)])
+            out.igrp= np.array([ unpack("i",f.read(4)) for _ in range(ndrec)])
             f.read(4) #EOL
     
             # RECORD #NCOM+6a -- Receptor-group names
@@ -478,10 +471,10 @@ def read_file(filepath: str) -> 'CalpuffOutput':
         # RECORD #NCOM+7 -- Complex terrain receptor data
         if (nctrec > 0):
             f.read(4) #record marker
-            out.x = np.array([ struct.unpack("f",f.read(4)) for _ in range(nctrec)])*1e3 #km to m
-            out.y = np.array([ struct.unpack("f",f.read(4)) for _ in range(nctrec)])*1e3 #km to m
-            out.z = np.array([ struct.unpack("f",f.read(4)) for _ in range(nctrec)])
-            out.ihill=np.array([ struct.unpack("i",f.read(4)) for _ in range(nctrec)])
+            out.x = np.array([ unpack("f",f.read(4)) for _ in range(nctrec)])*1e3 #km to m
+            out.y = np.array([ unpack("f",f.read(4)) for _ in range(nctrec)])*1e3 #km to m
+            out.z = np.array([ unpack("f",f.read(4)) for _ in range(nctrec)])
+            out.ihill=np.array([ unpack("i",f.read(4)) for _ in range(nctrec)])
             f.read(4) #EOL
             
         # RECORD #NCOM+8 -- Source names
@@ -515,6 +508,7 @@ def read_file(filepath: str) -> 'CalpuffOutput':
         out.proj['datum'] = datum.decode("utf-8").strip()    #
         out.proj['zone']  = iutmzn                            
         out.proj['hemis'] = utmhem.decode("utf-8").strip()   # north/south-ern hemisphere                                                  
+
         # Species params:
         out.nsp     = nspout
         out.species = csout
@@ -532,6 +526,7 @@ def read_file(filepath: str) -> 'CalpuffOutput':
         out.nsrctype=nsrctype
         out.nsrcbytype=nsrcbytype
         out.src_names=cnamsrc
+
         # Internal:
         out.is_compressed = lcomprs
         out.NCOM = NCOM
