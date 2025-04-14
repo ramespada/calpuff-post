@@ -10,7 +10,7 @@ This library is capable of:
 What this library does NOT do:
  - Make plots. (See `./tests/plot_avg.py`)
  - Make animations. (See `./tests/animation.py`)
- - Make tables. (See `./scripts/tables.py`)
+ - Make tables. (See `./tests/tables.py`)
 
 ## Dependencies:
 This code uses the following python libraries:
@@ -30,13 +30,13 @@ puff.info()
 X,Y = puff.get_coordinates()
 
 # Get concentration of a specific pollutant
-specie = puff.species[0]
 
+specie = puff.species[0]
 C = puff.get_data(specie)
 
 # Get time-averaged max value of a specific pollutant:
 
-C_1hr = puff.get_time_avg_max(specie, hours=1)
+C_1hr = puff.get_time_avg_max(specie, interval=1, rank=1)
 ```
 
 ### Objects:
